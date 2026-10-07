@@ -1,0 +1,926 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Fraud Detection Dashboard</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
+
+  /* Header */
+  .header { background: linear-gradient(135deg, #1e293b, #0f172a); padding: 20px 30px; border-bottom: 1px solid #334155; display: flex; align-items: center; gap: 15px; flex-wrap: wrap; }
+  .header h1 { font-size: 1.6rem; color: #f1f5f9; }
+  .badge { background: #3b82f6; color: white; padding: 3px 10px; border-radius: 20px; font-size: 0.75rem; }
+  .badge-version { background: #7c3aed; }
+  #headerVersion { font-size: 0.78rem; color: #94a3b8; margin-left: auto; }
+
+  /* Model retrain banner */
+  .retrain-banner { display: none; background: linear-gradient(90deg,rgba(139,92,246,0.15),rgba(59,130,246,0.10)); border: 1px solid #7c3aed; border-radius: 10px; padding: 12px 20px; margin-bottom: 18px; font-size: 0.9rem; color: #c4b5fd; animation: fadeIn 0.5s ease; }
+  @keyframes fadeIn { from{opacity:0;transform:translateY(-8px)} to{opacity:1;transform:translateY(0)} }
+
+  /* Layout */
+  .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+
+  /* Stats row */
+  .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+  .stat-card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 20px; }
+  .stat-card .label { font-size: 0.8rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; }
+  .stat-card .value { font-size: 2rem; font-weight: 700; margin-top: 6px; }
+  .stat-card.fraud .value   { color: #ef4444; }
+  .stat-card.genuine .value { color: #22c55e; }
+  .stat-card.total .value   { color: #3b82f6; }
+  .stat-card.rate .value    { color: #f59e0b; }
+
+  /* Main grid */
+  .main-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px; }
+
+  /* Cards */
+  .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 22px; }
+  .card h2 { font-size: 1rem; color: #94a3b8; margin-bottom: 16px; text-transform: uppercase; letter-spacing: 0.05em; }
+
+  /* Buttons */
+  .btn { padding: 12px 24px; border: none; border-radius: 8px; font-size: 0.95rem; font-weight: 600; cursor: pointer; transition: all 0.2s; width: 100%; margin-bottom: 10px; }
+  .btn-fraud   { background: linear-gradient(135deg,#ef4444,#dc2626); color: white; }
+  .btn-fraud:hover   { transform: translateY(-1px); box-shadow: 0 4px 15px rgba(239,68,68,.4); }
+  .btn-genuine { background: linear-gradient(135deg,#22c55e,#16a34a); color: white; }
+  .btn-genuine:hover { transform: translateY(-1px); box-shadow: 0 4px 15px rgba(34,197,94,.4); }
+  .btn-submit  { background: linear-gradient(135deg,#3b82f6,#2563eb); color: white; }
+  .btn-submit:hover  { transform: translateY(-1px); box-shadow: 0 4px 15px rgba(59,130,246,.4); }
+  .btn-drift   { background: linear-gradient(135deg,#8b5cf6,#7c3aed); color: white; }
+  .btn-drift:hover   { transform: translateY(-1px); box-shadow: 0 4px 15px rgba(139,92,246,.4); }
+  .btn:disabled { opacity: .6; cursor: not-allowed; transform: none !important; }
+
+  /* Form */
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .form-group { display: flex; flex-direction: column; gap: 4px; }
+  .form-group label { font-size: 0.8rem; color: #94a3b8; }
+  .form-group input, .form-group select { background: #0f172a; border: 1px solid #334155; border-radius: 6px; color: #e2e8f0; padding: 8px 10px; font-size: 0.9rem; }
+  .form-group input:focus, .form-group select:focus { outline: none; border-color: #3b82f6; }
+
+  /* Result box */
+  .result-box { border-radius: 10px; padding: 16px; margin-top: 14px; display: none; }
+  .result-box.fraud   { background: rgba(239,68,68,.1); border: 1px solid #ef4444; }
+  .result-box.genuine { background: rgba(34,197,94,.1); border: 1px solid #22c55e; }
+  .result-label { font-size: 1.4rem; font-weight: 700; }
+  .result-label.fraud   { color: #ef4444; }
+  .result-label.genuine { color: #22c55e; }
+  .result-conf { font-size: 0.9rem; color: #94a3b8; margin-top: 4px; }
+  .shap-list { margin-top: 12px; }
+  .shap-item { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid #334155; font-size: 0.85rem; }
+  .shap-item:last-child { border-bottom: none; }
+  .shap-feat { color: #cbd5e1; }
+  .shap-val.pos { color: #ef4444; }
+  .shap-val.neg { color: #22c55e; }
+
+  /* Transaction table */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  th { background: #0f172a; color: #94a3b8; padding: 10px 12px; text-align: left; font-weight: 600; text-transform: uppercase; font-size: 0.75rem; letter-spacing: .05em; }
+  td { padding: 10px 12px; border-bottom: 1px solid #1e293b; }
+  tr:hover td { background: #1e293b; }
+  .badge-fraud   { background: rgba(239,68,68,.15); color: #ef4444; padding: 2px 8px; border-radius: 20px; font-size: .75rem; font-weight: 600; }
+  .badge-genuine { background: rgba(34,197,94,.15); color: #22c55e; padding: 2px 8px; border-radius: 20px; font-size: .75rem; font-weight: 600; }
+  .badge-source  { background: #334155; color: #94a3b8; padding: 2px 8px; border-radius: 20px; font-size: .72rem; }
+  .badge-ver     { background: rgba(139,92,246,.2); color: #c4b5fd; padding: 2px 7px; border-radius: 20px; font-size: .70rem; }
+
+  /* Drift section */
+  .drift-card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 22px; margin-bottom: 24px; }
+  .drift-card h2 { font-size: 1rem; color: #94a3b8; margin-bottom: 16px; text-transform: uppercase; letter-spacing: .05em; }
+  .drift-result { margin-top: 14px; padding: 14px; border-radius: 8px; display: none; }
+  .drift-result.safe   { background: rgba(34,197,94,.1); border: 1px solid #22c55e; }
+  .drift-result.danger { background: rgba(239,68,68,.1); border: 1px solid #ef4444; }
+  .drift-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; margin-top: 10px; }
+  .drift-item .d-label { font-size: .75rem; color: #94a3b8; }
+  .drift-item .d-value { font-size: 1.1rem; font-weight: 600; color: #e2e8f0; }
+
+  /* ── SHAP Explainability Section ─────────────────────────────────────────── */
+  .shap-section { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 22px; margin-bottom: 24px; }
+  .shap-section h2 { font-size: 1rem; color: #94a3b8; margin-bottom: 6px; text-transform: uppercase; letter-spacing: .05em; }
+  .shap-section .subtitle { font-size: .82rem; color: #64748b; margin-bottom: 18px; }
+
+  /* Tabs */
+  .shap-tabs { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+  .shap-tab { padding: 7px 18px; border-radius: 6px; border: 1px solid #334155; background: #0f172a; color: #94a3b8; cursor: pointer; font-size: .85rem; font-weight: 500; transition: all .2s; }
+  .shap-tab.active { background: #3b82f6; border-color: #3b82f6; color: white; }
+  .shap-tab-content { display: none; }
+  .shap-tab-content.active { display: block; }
+
+  /* Global bar chart */
+  .shap-bar-wrap { margin-top: 6px; }
+  .shap-bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 9px; font-size: .82rem; }
+  .shap-bar-label { width: 200px; color: #cbd5e1; text-align: right; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .shap-bar-outer { flex: 1; background: #0f172a; border-radius: 4px; height: 16px; }
+  .shap-bar-fill { height: 100%; border-radius: 4px; transition: width .5s ease; }
+  .shap-bar-fill.graph { background: linear-gradient(90deg,#ef4444,#f87171); }
+  .shap-bar-fill.base  { background: linear-gradient(90deg,#3b82f6,#60a5fa); }
+  .shap-bar-val { width: 58px; color: #94a3b8; font-size: .78rem; flex-shrink: 0; }
+  .shap-legend { display: flex; gap: 16px; margin-top: 14px; flex-wrap: wrap; font-size: .82rem; color: #94a3b8; }
+  .shap-legend-dot { width: 10px; height: 10px; border-radius: 2px; display: inline-block; margin-right: 5px; vertical-align: middle; }
+
+  /* Waterfall */
+  .wf-row { display: flex; align-items: center; gap: 10px; margin-bottom: 7px; font-size: .82rem; }
+  .wf-label { width: 200px; color: #cbd5e1; text-align: right; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .wf-bar-area { flex: 1; position: relative; height: 18px; display: flex; align-items: center; }
+  .wf-bar { height: 14px; border-radius: 3px; position: absolute; transition: all .4s ease; }
+  .wf-bar.pos { background: linear-gradient(90deg,#ef4444,#f87171); }
+  .wf-bar.neg { background: linear-gradient(90deg,#22c55e,#4ade80); }
+  .wf-val { width: 62px; font-size: .78rem; flex-shrink: 0; }
+  .wf-val.pos { color: #ef4444; }
+  .wf-val.neg { color: #22c55e; }
+  .wf-zero-line { position: absolute; width: 1px; background: #475569; top: 0; bottom: 0; }
+
+  /* Reasons */
+  .reason-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; background: #0f172a; border-radius: 8px; margin-bottom: 8px; border-left: 3px solid #ef4444; }
+  .reason-item.neg { border-left-color: #22c55e; }
+  .reason-text { flex: 1; font-size: .85rem; color: #cbd5e1; }
+  .reason-shap { font-size: .78rem; color: #94a3b8; margin-top: 2px; }
+
+  /* SHAP drift comparison */
+  .drift-compare-wrap { overflow-x: auto; margin-top: 8px; }
+  .drift-compare-table { border-collapse: collapse; font-size: .8rem; min-width: 500px; }
+  .drift-compare-table th { background: #0f172a; color: #94a3b8; padding: 8px 12px; text-align: left; font-size: .75rem; white-space: nowrap; }
+  .drift-compare-table td { padding: 7px 12px; border-bottom: 1px solid #1e293b; }
+  .drift-compare-table tr:hover td { background: #0f172a; }
+  .delta-pos { color: #ef4444; font-weight: 600; }
+  .delta-neg { color: #22c55e; font-weight: 600; }
+  .delta-neu { color: #94a3b8; }
+
+  /* Shared input row */
+  .shap-id-row { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+  .shap-id-row input { background: #0f172a; border: 1px solid #334155; border-radius: 6px; color: #e2e8f0; padding: 8px 12px; font-size: .9rem; width: 140px; }
+  .btn-shap { padding: 8px 18px; border: none; border-radius: 6px; background: linear-gradient(135deg,#f59e0b,#d97706); color: white; font-size: .85rem; font-weight: 600; cursor: pointer; transition: all .2s; white-space: nowrap; }
+  .btn-shap:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(245,158,11,.35); }
+  .btn-shap-blue { background: linear-gradient(135deg,#3b82f6,#2563eb); }
+  .btn-shap-blue:hover { box-shadow: 0 4px 12px rgba(59,130,246,.35); }
+  .btn-shap-purple { background: linear-gradient(135deg,#8b5cf6,#7c3aed); }
+  .btn-shap-purple:hover { box-shadow: 0 4px 12px rgba(139,92,246,.35); }
+  .shap-empty { color: #64748b; font-size: .85rem; padding: 24px 0; text-align: center; }
+  .model-ver-tag { font-size: .75rem; color: #7c3aed; background: rgba(139,92,246,.15); padding: 3px 8px; border-radius: 12px; display: inline-block; margin-left: 8px; }
+
+  /* Spinner / Toast */
+  .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.3); border-top-color: white; border-radius: 50%; animation: spin .7s linear infinite; margin-right: 8px; vertical-align: middle; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .toast { position: fixed; bottom: 24px; right: 24px; background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 14px 20px; z-index: 1000; display: none; max-width: 340px; }
+  .toast.show { display: block; animation: slideIn .3s ease; }
+  @keyframes slideIn { from{transform:translateX(100px);opacity:0} to{transform:translateX(0);opacity:1} }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+    <rect width="32" height="32" rx="8" fill="#3b82f6"/>
+    <path d="M16 6L8 10v7c0 4.4 3.4 8.5 8 9.5 4.6-1 8-5.1 8-9.5v-7L16 6z" fill="white" opacity=".9"/>
+    <path d="M13 16l2 2 4-4" stroke="#3b82f6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+  <h1>Fraud Detection Dashboard</h1>
+  <span class="badge">XGBoost + SHAP</span>
+  <span id="headerVersion" style="margin-left:auto;"></span>
+</div>
+
+<div class="container">
+
+  <!-- Retrain banner -->
+  <div class="retrain-banner" id="retrainBanner"></div>
+
+  <!-- Stats -->
+  <div class="stats-row">
+    <div class="stat-card total"><div class="label">Total Transactions</div><div class="value" id="statTotal">0</div></div>
+    <div class="stat-card fraud"><div class="label">Fraud Detected</div><div class="value" id="statFraud">0</div></div>
+    <div class="stat-card genuine"><div class="label">Genuine</div><div class="value" id="statGenuine">0</div></div>
+    <div class="stat-card rate"><div class="label">Fraud Rate</div><div class="value" id="statRate">0%</div></div>
+  </div>
+
+  <!-- Generate + Manual -->
+  <div class="main-grid">
+    <div class="card">
+      <h2> Auto Generate Transaction</h2>
+      <button class="btn btn-fraud"   id="btnFraud"   onclick="generate('fraud')">Generate Fraud Transaction</button>
+      <button class="btn btn-genuine" id="btnGenuine" onclick="generate('genuine')">Generate Genuine Transaction</button>
+      <div class="result-box" id="autoResult"></div>
+    </div>
+
+    <div class="card">
+      <h2> Manual Transaction Input</h2>
+      <div class="form-grid">
+        <div class="form-group"><label>Step (1–179)</label><input type="number" id="fStep" value="50" min="1" max="179"/></div>
+        <div class="form-group"><label>Amount (EUR)</label><input type="number" id="fAmount" value="150.00" step="0.01"/></div>
+        <div class="form-group"><label>Customer ID</label><input type="text" id="fCustomer" value="C1234567890"/></div>
+        <div class="form-group"><label>Age Group</label>
+          <select id="fAge">
+            <option value="0">0</option><option value="1">1</option><option value="2">2</option>
+            <option value="3" selected>3</option><option value="4">4</option><option value="5">5</option>
+            <option value="6">6</option><option value="U">U (Unknown)</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Gender</label>
+          <select id="fGender"><option value="M" selected>M</option><option value="F">F</option><option value="E">E</option><option value="U">U</option></select>
+        </div>
+        <div class="form-group"><label>Category</label>
+          <select id="fCategory">
+            <option value="es_transportation">Transportation</option><option value="es_food">Food</option>
+            <option value="es_health">Health</option><option value="es_wellnessandbeauty">Wellness &amp; Beauty</option>
+            <option value="es_fashion">Fashion</option><option value="es_home">Home</option>
+            <option value="es_hotelservices">Hotel Services</option><option value="es_barsandrestaurants">Bars &amp; Restaurants</option>
+            <option value="es_otherservices">Other Services</option><option value="es_hyper">Hyper</option>
+            <option value="es_leisure">Leisure</option><option value="es_travel">Travel</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Zip Code (Customer)</label><input type="text" id="fZipOri" value="28007"/></div>
+        <div class="form-group"><label>Zip Code (Merchant)</label><input type="text" id="fZipMerchant" value="28007"/></div>
+        <div class="form-group"><label>Merchant ID</label><input type="text" id="fMerchant" value="M1234567890"/></div>
+      </div>
+      <br/>
+      <button class="btn btn-submit" id="btnSubmit" onclick="submitManual()">Predict Transaction</button>
+      <div class="result-box" id="manualResult"></div>
+    </div>
+  </div>
+
+  <!-- Concept Drift -->
+  <div class="drift-card">
+    <h2>📊 Concept Drift Monitor</h2>
+    <p style="color:#94a3b8;font-size:.85rem;margin-bottom:14px;">
+      Automatically checks every <strong style="color:#e2e8f0;">50 transactions</strong>.
+      Uses PSI (Population Stability Index) — if PSI &gt; 0.2, model auto-retrains
+      and the SHAP explainer is hot-swapped immediately.
+    </p>
+    <button class="btn btn-drift" style="width:auto;padding:10px 24px;" onclick="checkDrift()">Manual Drift Check Now</button>
+    <div class="drift-result" id="driftResult"></div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       SECTION 7 — Research Gap 3: Explainable AI with SHAP
+       ═══════════════════════════════════════════════════════════ -->
+  <div class="shap-section">
+    <h2>🔍 Research Gap 3 — Explainable AI with SHAP</h2>
+    <p class="subtitle">
+      Regulatory frameworks (GDPR Art.22, EU AI Act, Basel III) require automated financial decisions
+      to be explainable. SHAP values are always computed from the <strong style="color:#e2e8f0;">currently active model</strong> —
+      after every drift-triggered retrain the explainer hot-swaps automatically so explanations stay consistent.
+    </p>
+
+    <div class="shap-tabs">
+      <button class="shap-tab active"  onclick="switchShapTab('global')">📊 Global Feature Importance</button>
+      <button class="shap-tab"         onclick="switchShapTab('waterfall')">🌊 Per-Transaction Waterfall</button>
+      <button class="shap-tab"         onclick="switchShapTab('reasons')">📝 Human-Readable Reasons</button>
+      <button class="shap-tab"         onclick="switchShapTab('drift_shap')">🔄 SHAP Drift Comparison</button>
+    </div>
+
+    <!-- Tab 1: Global Feature Importance -->
+    <div class="shap-tab-content active" id="shapTab-global">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
+        <span style="font-size:.85rem;color:#94a3b8;">
+          Mean |SHAP| for the <strong style="color:#e2e8f0;" id="globalVerLabel">current model</strong> — only transactions from that version are included.
+        </span>
+        <button class="btn-shap btn-shap-blue" onclick="loadShapGlobal()">↻ Compute Global SHAP</button>
+      </div>
+      <div class="shap-bar-wrap" id="shapGlobalChart">
+        <div class="shap-empty">Click "Compute Global SHAP" to analyse feature importance across all transactions.</div>
+      </div>
+      <div class="shap-legend" id="shapGlobalLegend" style="display:none;">
+        <span><span class="shap-legend-dot" style="background:#ef4444;"></span>Graph / Engineered Feature</span>
+        <span><span class="shap-legend-dot" style="background:#3b82f6;"></span>Base Feature</span>
+        <span id="shapSampleNote" style="color:#64748b;font-size:.8rem;"></span>
+      </div>
+    </div>
+
+    <!-- Tab 2: Waterfall -->
+    <div class="shap-tab-content" id="shapTab-waterfall">
+      <div class="shap-id-row">
+        <label style="font-size:.85rem;color:#94a3b8;">Transaction ID:</label>
+        <input type="number" id="shapTxId" placeholder="e.g. 5" min="1"/>
+        <button class="btn-shap" onclick="loadShapWaterfall()">Explain Transaction</button>
+        <button class="btn-shap btn-shap-blue" onclick="explainLatest('waterfall')">Explain Latest</button>
+      </div>
+      <div id="shapWaterfallBox">
+        <div class="shap-empty">Enter a transaction ID or click "Explain Latest" to see the waterfall plot.</div>
+      </div>
+    </div>
+
+    <!-- Tab 3: Human-Readable Reasons -->
+    <div class="shap-tab-content" id="shapTab-reasons">
+      <div class="shap-id-row">
+        <label style="font-size:.85rem;color:#94a3b8;">Transaction ID:</label>
+        <input type="number" id="shapReasonsId" placeholder="e.g. 5" min="1"/>
+        <button class="btn-shap" onclick="loadShapReasons()">Generate Report</button>
+        <button class="btn-shap btn-shap-blue" onclick="explainLatest('reasons')">Latest Transaction</button>
+      </div>
+      <div id="shapReasonsBox">
+        <div class="shap-empty">Enter a transaction ID to generate a human-readable fraud reason report.</div>
+      </div>
+    </div>
+
+    <!-- Tab 4: SHAP Drift Comparison -->
+    <div class="shap-tab-content" id="shapTab-drift_shap">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
+        <span style="font-size:.85rem;color:#94a3b8;">
+          Compare global feature importance <em>before vs after</em> each drift-triggered retrain.
+          A large delta means the model learned a new fraud pattern.
+        </span>
+        <button class="btn-shap btn-shap-purple" onclick="loadShapDriftComparison()">↻ Load Comparison</button>
+      </div>
+      <div id="shapDriftCompareBox">
+        <div class="shap-empty">Drift comparison is available after at least one retrain. Click "Load Comparison".</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Model Accuracy Tracker -->
+  <div class="card" style="margin-bottom:24px;" id="accuracyCard">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <h2 style="margin:0;">🎯 Model Accuracy Tracker</h2>
+      <button onclick="loadAccuracy()" style="background:#334155;color:#e2e8f0;border:none;border-radius:6px;padding:6px 14px;cursor:pointer;font-size:.85rem;">↻ Refresh</button>
+    </div>
+    <p style="color:#94a3b8;font-size:.85rem;margin:0 0 16px;">
+      Mark each transaction as <strong style="color:#22c55e;">Genuine</strong> or <strong style="color:#ef4444;">Fraud</strong> using the Action buttons in the table below.
+      The tracker computes real accuracy from your human labels.
+    </p>
+    <div id="accuracyStats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;">
+      <div style="background:#1e293b;border-radius:8px;padding:14px;text-align:center;">
+        <div style="font-size:.75rem;color:#94a3b8;margin-bottom:4px;">REVIEWED</div>
+        <div id="acc_reviewed" style="font-size:1.6rem;font-weight:700;color:#e2e8f0;">—</div>
+      </div>
+      <div style="background:#1e293b;border-radius:8px;padding:14px;text-align:center;">
+        <div style="font-size:.75rem;color:#94a3b8;margin-bottom:4px;">ACCURACY</div>
+        <div id="acc_accuracy" style="font-size:1.6rem;font-weight:700;color:#3b82f6;">—</div>
+      </div>
+      <div style="background:#1e293b;border-radius:8px;padding:14px;text-align:center;">
+        <div style="font-size:.75rem;color:#94a3b8;margin-bottom:4px;">PRECISION</div>
+        <div id="acc_precision" style="font-size:1.6rem;font-weight:700;color:#8b5cf6;">—</div>
+      </div>
+      <div style="background:#1e293b;border-radius:8px;padding:14px;text-align:center;">
+        <div style="font-size:.75rem;color:#94a3b8;margin-bottom:4px;">RECALL</div>
+        <div id="acc_recall" style="font-size:1.6rem;font-weight:700;color:#f59e0b;">—</div>
+      </div>
+      <div style="background:#1e293b;border-radius:8px;padding:14px;text-align:center;">
+        <div style="font-size:.75rem;color:#94a3b8;margin-bottom:4px;">MISSED FRAUDS</div>
+        <div id="acc_fn" style="font-size:1.6rem;font-weight:700;color:#ef4444;">—</div>
+      </div>
+      <div style="background:#1e293b;border-radius:8px;padding:14px;text-align:center;">
+        <div style="font-size:.75rem;color:#94a3b8;margin-bottom:4px;">FALSE ALARMS</div>
+        <div id="acc_fp" style="font-size:1.6rem;font-weight:700;color:#f97316;">—</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Transaction History -->
+  <div class="card" style="margin-bottom:24px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <h2 style="margin:0;">📋 Transaction History</h2>
+      <button onclick="loadTransactions()" style="background:#334155;color:#e2e8f0;border:none;border-radius:6px;padding:6px 14px;cursor:pointer;font-size:.85rem;">↻ Refresh</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th><th>Time</th><th>Customer</th><th>Amount</th>
+            <th>Category</th><th>Source</th><th>Result</th><th>Confidence</th><th>Model Ver.</th><th>Actual</th><th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="txTable">
+          <tr><td colspan="9" style="text-align:center;color:#64748b;padding:30px;">No transactions yet.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div><!-- /container -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ══════════════════════════════════════════════════════════════════
+// Helpers
+// ══════════════════════════════════════════════════════════════════
+const GRAPH_FEATURES = new Set([
+  'network_suspicion_score','merchant_fraud_rate','category_fraud_rate',
+  'cust_txn_count','cust_avg_amount','cust_std_amount',
+  'merchant_txn_volume','cust_unique_merchants','cust_category_diversity',
+  'amount_to_mean_ratio'
+]);
+
+function showToast(msg, color='#3b82f6') {
+  const t = document.getElementById('toast');
+  t.innerHTML = msg;
+  t.style.borderColor = color;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 4000);
+}
+
+function showRetrainBanner(version) {
+  const b = document.getElementById('retrainBanner');
+  b.innerHTML = `🔄 <strong>Model Retrained!</strong> New version <code style="background:rgba(139,92,246,.2);padding:2px 6px;border-radius:4px;">${version}</code> is now live. SHAP explainer has been hot-swapped — all new explanations reflect the updated model.`;
+  b.style.display = 'block';
+  setTimeout(() => { b.style.display = 'none'; }, 12000);
+}
+
+function renderResult(containerId, result, txn) {
+  const el      = document.getElementById(containerId);
+  const isFraud = result.prediction === 1;
+  el.className  = 'result-box ' + (isFraud ? 'fraud' : 'genuine');
+  el.style.display = 'block';
+
+  const reasons = (result.top_reasons || []).map(r =>
+    `<div class="shap-item">
+      <span class="shap-feat">${r.feature}</span>
+      <span class="shap-val ${r.impact > 0 ? 'pos' : 'neg'}">${r.impact > 0 ? '+' : ''}${r.impact.toFixed(4)}</span>
+    </div>`
+  ).join('');
+
+  el.innerHTML = `
+    <div class="result-label ${isFraud ? 'fraud' : 'genuine'}">${isFraud ? '🚨 FRAUD DETECTED' : '✅ GENUINE'}</div>
+    <div class="result-conf">
+      Confidence: <strong>${(result.confidence*100).toFixed(1)}%</strong>
+      &nbsp;|&nbsp; Threshold: ${result.threshold}
+      &nbsp;|&nbsp; Amount: €${txn.amount}
+    </div>
+    <div class="shap-list">
+      <div style="font-size:.8rem;color:#94a3b8;margin:10px 0 4px;">Top SHAP Factors</div>
+      ${reasons}
+    </div>`;
+}
+
+// ══════════════════════════════════════════════════════════════════
+// Generate / Predict
+// ══════════════════════════════════════════════════════════════════
+async function generate(type) {
+  const btnId = type === 'fraud' ? 'btnFraud' : 'btnGenuine';
+  const btn   = document.getElementById(btnId);
+  btn.disabled = true;
+  btn.innerHTML = `<span class="spinner"></span>Generating...`;
+  try {
+    const res  = await fetch('/api/generate', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({type}) });
+    const data = await res.json();
+    renderResult('autoResult', data.result, data.transaction);
+    loadStats(); loadTransactions();
+    showToast(data.result.prediction===1 ? '🚨 Fraud detected!' : '✅ Genuine confirmed.', data.result.prediction===1 ? '#ef4444' : '#22c55e');
+  } catch(e) { showToast('Error: '+e.message,'#ef4444'); }
+  finally {
+    btn.disabled = false;
+    btn.innerHTML = type === 'fraud' ? 'Generate Fraud Transaction' : 'Generate Genuine Transaction';
+  }
+}
+
+async function submitManual() {
+  const btn = document.getElementById('btnSubmit');
+  btn.disabled = true; btn.innerHTML = `<span class="spinner"></span>Predicting...`;
+  const txn = {
+    step: parseInt(document.getElementById('fStep').value),
+    customer: document.getElementById('fCustomer').value,
+    age: document.getElementById('fAge').value,
+    gender: document.getElementById('fGender').value,
+    zipcodeOri: document.getElementById('fZipOri').value,
+    merchant: document.getElementById('fMerchant').value,
+    zipMerchant: document.getElementById('fZipMerchant').value,
+    category: document.getElementById('fCategory').value,
+    amount: parseFloat(document.getElementById('fAmount').value)
+  };
+  try {
+    const res  = await fetch('/api/predict', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(txn) });
+    const data = await res.json();
+    if (data.error) { showToast('Error: '+data.error,'#ef4444'); return; }
+    renderResult('manualResult', data.result, data.transaction);
+    loadStats(); loadTransactions();
+  } catch(e) { showToast('Error: '+e.message,'#ef4444'); }
+  finally { btn.disabled=false; btn.innerHTML='Predict Transaction'; }
+}
+
+// ══════════════════════════════════════════════════════════════════
+// Stats
+// ══════════════════════════════════════════════════════════════════
+let _lastVersion = null;
+async function loadStats() {
+  const res  = await fetch('/api/stats?_=' + Date.now());
+  const data = await res.json();
+  document.getElementById('statTotal').textContent   = data.total;
+  document.getElementById('statFraud').textContent   = data.fraud;
+  document.getElementById('statGenuine').textContent = data.genuine;
+  document.getElementById('statRate').textContent    = (data.fraud_rate*100).toFixed(1)+'%';
+
+  if (data.current_version) {
+    document.getElementById('headerVersion').textContent = '🧠 Model: ' + data.current_version;
+    if (_lastVersion && _lastVersion !== data.current_version) {
+      showRetrainBanner(data.current_version);
+    }
+    _lastVersion = data.current_version;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════
+// Transactions table
+// ══════════════════════════════════════════════════════════════════
+async function loadTransactions() {
+  const res   = await fetch('/api/transactions?limit=50&_=' + Date.now());
+  const rows  = await res.json();
+  const tbody = document.getElementById('txTable');
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;color:#64748b;padding:30px;">No transactions yet.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = rows.map(r => {
+    // Actual label display
+    let actualBadge = '<span style="color:#475569;font-size:.8rem;">—</span>';
+    if (r.actual_label === 1) actualBadge = '<span style="background:#7f1d1d;color:#fca5a5;padding:2px 8px;border-radius:4px;font-size:.75rem;font-weight:600;">FRAUD</span>';
+    if (r.actual_label === 0) actualBadge = '<span style="background:#14532d;color:#86efac;padding:2px 8px;border-radius:4px;font-size:.75rem;font-weight:600;">GENUINE</span>';
+
+    // Highlight wrong predictions
+    const isWrong = r.actual_label !== null && r.actual_label !== undefined && r.actual_label !== r.prediction;
+    const rowStyle = isWrong ? 'background:rgba(239,68,68,0.08);' : '';
+
+    // Feedback buttons — show as selected if already labelled
+    const fraudSelected   = r.actual_label === 1 ? 'background:#ef4444;color:#fff;' : 'background:#334155;color:#fca5a5;';
+    const genuineSelected = r.actual_label === 0 ? 'background:#22c55e;color:#fff;' : 'background:#334155;color:#86efac;';
+
+    return `
+    <tr style="${rowStyle}">
+      <td style="color:#64748b">#${r.id}</td>
+      <td style="color:#64748b;font-size:.8rem">${r.created_at ? r.created_at.split('T')[0] : '-'}</td>
+      <td style="font-family:monospace;font-size:.8rem">${r.customer||'-'}</td>
+      <td>€${r.amount ? r.amount.toFixed(2) : '-'}</td>
+      <td style="font-size:.8rem">${r.category ? r.category.replace('es_','') : '-'}</td>
+      <td><span class="badge-source">${r.source||'-'}</span></td>
+      <td>${r.prediction===1 ? '<span class="badge-fraud">FRAUD</span>' : '<span class="badge-genuine">GENUINE</span>'}</td>
+      <td>${r.confidence ? (r.confidence*100).toFixed(1)+'%' : '-'}</td>
+      <td><span class="badge-ver">${r.model_version||'v_original'}</span></td>
+      <td id="actual_${r.id}">${actualBadge}</td>
+      <td style="white-space:nowrap;">
+        <button onclick="markLabel(${r.id}, 1)" title="Mark as Fraud"
+          style="${fraudSelected}border:1px solid #ef4444;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:.75rem;margin-right:4px;">
+          🚨 Fraud
+        </button>
+        <button onclick="markLabel(${r.id}, 0)" title="Mark as Genuine"
+          style="${genuineSelected}border:1px solid #22c55e;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:.75rem;">
+          ✅ Genuine
+        </button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+// ══════════════════════════════════════════════════════════════════
+// Feedback & Accuracy
+// ══════════════════════════════════════════════════════════════════
+async function markLabel(txId, label) {
+  try {
+    const res = await fetch(`/api/feedback/${txId}`, {
+      method : 'POST',
+      headers: {'Content-Type':'application/json'},
+      body   : JSON.stringify({actual_label: label})
+    });
+    await res.json();
+    // Refresh table and accuracy tracker
+    loadTransactions();
+    loadAccuracy();
+    showToast(label===1 ? `#${txId} marked as FRAUD` : `#${txId} marked as GENUINE`,
+              label===1 ? '#ef4444' : '#22c55e');
+  } catch(e) {
+    showToast('Error saving label: ' + e.message, '#ef4444');
+  }
+}
+
+async function loadAccuracy() {
+  try {
+    const res  = await fetch('/api/accuracy?_=' + Date.now());
+    const data = await res.json();
+    document.getElementById('acc_reviewed').textContent  = data.total_reviewed ?? '—';
+    document.getElementById('acc_accuracy').textContent  = data.accuracy  != null ? data.accuracy  + '%' : '—';
+    document.getElementById('acc_precision').textContent = data.precision != null ? data.precision + '%' : '—';
+    document.getElementById('acc_recall').textContent    = data.recall    != null ? data.recall    + '%' : '—';
+    document.getElementById('acc_fn').textContent        = data.false_negatives ?? '—';
+    document.getElementById('acc_fp').textContent        = data.false_positives ?? '—';
+  } catch(e) {
+    console.error('Accuracy load error:', e);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════
+// Drift check
+// ══════════════════════════════════════════════════════════════════
+async function checkDrift() {
+  const el = document.getElementById('driftResult');
+  el.style.display = 'block';
+  el.className = 'drift-result safe';
+  el.innerHTML = `<span class="spinner"></span> Checking for concept drift...`;
+  try {
+    const res  = await fetch('/api/drift/check', { method:'POST' });
+    const data = await res.json();
+
+    if (!data.checked) {
+      el.innerHTML = `<strong style="color:#f59e0b;">⚠️ ${data.reason}</strong>`;
+      return;
+    }
+
+    const isDrift = data.drift_detected;
+    el.className  = 'drift-result '+(isDrift ? 'danger' : 'safe');
+
+    let retrainHtml = '';
+    if (isDrift && data.retrain) {
+      if (data.retrain.success) {
+        retrainHtml = `
+          <div style="margin-top:12px;padding:10px;background:rgba(139,92,246,.1);border:1px solid #7c3aed;border-radius:8px;font-size:.85rem;">
+            <strong style="color:#c4b5fd;">🔄 Model Retrained &amp; SHAP Updated</strong><br>
+            <span style="color:#94a3b8;">New version: <code>${data.retrain.version}</code> |
+            Samples used: ${data.retrain.samples_used} |
+            Live SHAP explainer hot-swapped ✓</span>
+          </div>`;
+        showRetrainBanner(data.retrain.version);
+        loadStats();
+      } else {
+        retrainHtml = `<div style="margin-top:10px;font-size:.85rem;color:#ef4444;">Retrain failed: ${data.retrain.reason}</div>`;
+      }
+    }
+
+    el.innerHTML = `
+      <strong style="color:${isDrift ? '#ef4444' : '#22c55e'};">
+        ${isDrift ? '🚨 Drift Detected — Model Retrained!' : '✅ No Significant Drift'}
+      </strong>
+      <div class="drift-grid">
+        <div class="drift-item"><div class="d-label">Window Size</div><div class="d-value">${data.window_size}</div></div>
+        <div class="drift-item"><div class="d-label">Current Fraud Rate</div><div class="d-value">${(data.fraud_rate*100).toFixed(2)}%</div></div>
+        <div class="drift-item"><div class="d-label">Baseline Rate</div><div class="d-value">${(data.baseline_rate*100).toFixed(2)}%</div></div>
+        <div class="drift-item"><div class="d-label">PSI Score</div><div class="d-value">${data.psi_score}</div></div>
+      </div>
+      ${retrainHtml}`;
+  } catch(e) {
+    el.innerHTML = `<strong style="color:#ef4444;">Error: ${e.message}</strong>`;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════
+// SHAP Tab switcher
+// ══════════════════════════════════════════════════════════════════
+function switchShapTab(name) {
+  const tabNames = ['global','waterfall','reasons','drift_shap'];
+  document.querySelectorAll('.shap-tab').forEach((t, i) => t.classList.toggle('active', tabNames[i]===name));
+  document.querySelectorAll('.shap-tab-content').forEach(c => c.classList.toggle('active', c.id==='shapTab-'+name));
+}
+
+// ══════════════════════════════════════════════════════════════════
+// Tab 1 — Global Feature Importance
+// ══════════════════════════════════════════════════════════════════
+async function loadShapGlobal() {
+  const chart  = document.getElementById('shapGlobalChart');
+  const legend = document.getElementById('shapGlobalLegend');
+  chart.innerHTML = `<div class="shap-empty"><span class="spinner"></span> Computing SHAP values…</div>`;
+  legend.style.display = 'none';
+  try {
+    const res  = await fetch('/api/shap/global');
+    const data = await res.json();
+    if (data.error) { chart.innerHTML = `<div class="shap-empty" style="color:#ef4444;">⚠️ ${data.error}</div>`; return; }
+
+    document.getElementById('globalVerLabel').textContent = data.model_version || 'current model';
+
+    const features = data.features;
+    const maxVal   = features[0]?.importance || 1;
+
+    chart.innerHTML = features.map(f => {
+      const pct     = ((f.importance / maxVal) * 100).toFixed(1);
+      const isGraph = GRAPH_FEATURES.has(f.feature);
+      return `
+        <div class="shap-bar-row">
+          <div class="shap-bar-label" title="${f.feature}">${f.feature}</div>
+          <div class="shap-bar-outer">
+            <div class="shap-bar-fill ${isGraph?'graph':'base'}" style="width:${pct}%;"></div>
+          </div>
+          <div class="shap-bar-val">${f.importance.toFixed(4)}</div>
+        </div>`;
+    }).join('');
+
+    const src = data.source === 'snapshot' ? '(from retrain snapshot)' : `Based on ${data.sample_size} transactions`;
+    document.getElementById('shapSampleNote').textContent = src;
+    legend.style.display = 'flex';
+  } catch(e) {
+    chart.innerHTML = `<div class="shap-empty" style="color:#ef4444;">Error: ${e.message}</div>`;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════
+// Tab 2 — Waterfall Plot
+// ══════════════════════════════════════════════════════════════════
+async function loadShapWaterfall(txId) {
+  const id  = txId || document.getElementById('shapTxId').value;
+  const box = document.getElementById('shapWaterfallBox');
+  if (!id) { box.innerHTML = `<div class="shap-empty" style="color:#f59e0b;">⚠️ Enter a transaction ID.</div>`; return; }
+  box.innerHTML = `<div class="shap-empty"><span class="spinner"></span> Loading SHAP waterfall for #${id}…</div>`;
+
+  try {
+    const res  = await fetch(`/api/shap/explain/${id}`);
+    const data = await res.json();
+    if (data.error) { box.innerHTML = `<div class="shap-empty" style="color:#ef4444;">⚠️ ${data.error}</div>`; return; }
+
+    const wf      = data.waterfall.slice(0, 14);
+    const maxAbs  = Math.max(...wf.map(r => Math.abs(r.value)), 0.001);
+    const halfW   = 46;
+    const isFraud = data.prediction === 1;
+
+    let html = `
+      <div style="margin-bottom:12px;font-size:.85rem;display:flex;align-items:center;flex-wrap:wrap;gap:8px;">
+        <span style="color:${isFraud?'#ef4444':'#22c55e'};font-weight:700;">${isFraud?'🚨 FRAUD':'✅ GENUINE'}</span>
+        <span style="color:#94a3b8;">Confidence: <strong>${(data.confidence*100).toFixed(1)}%</strong></span>
+        <span style="color:#94a3b8;">| TX #${data.tx_id}</span>
+        <span class="model-ver-tag">${data.model_version||'v_original'}</span>
+      </div>
+      <div style="display:flex;gap:10px;font-size:.73rem;color:#64748b;margin-bottom:8px;padding-left:210px;">
+        <span style="flex:0 0 ${halfW}%;text-align:right;">← Decreases Fraud Risk</span>
+        <span style="flex:0 0 ${halfW}%;text-align:left;">Increases Fraud Risk →</span>
+      </div>`;
+
+    wf.forEach(r => {
+      const pct   = ((Math.abs(r.value) / maxAbs) * halfW).toFixed(1);
+      const isPos = r.value >= 0;
+      const left  = isPos ? halfW : (halfW - parseFloat(pct));
+      html += `
+        <div class="wf-row">
+          <div class="wf-label" title="${r.feature}">${r.feature}</div>
+          <div class="wf-bar-area">
+            <div class="wf-zero-line" style="left:${halfW}%;"></div>
+            <div class="wf-bar ${isPos?'pos':'neg'}" style="left:${left}%;width:${pct}%;"></div>
+          </div>
+          <div class="wf-val ${isPos?'pos':'neg'}">${r.value>0?'+':''}${r.value.toFixed(4)}</div>
+        </div>`;
+    });
+
+    html += `
+      <div style="display:flex;gap:20px;margin-top:14px;font-size:.8rem;color:#94a3b8;">
+        <span><span class="shap-legend-dot" style="background:#ef4444;"></span>Pushes toward FRAUD</span>
+        <span><span class="shap-legend-dot" style="background:#22c55e;"></span>Pushes toward GENUINE</span>
+      </div>`;
+
+    box.innerHTML = html;
+  } catch(e) {
+    box.innerHTML = `<div class="shap-empty" style="color:#ef4444;">Error: ${e.message}</div>`;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════
+// Tab 3 — Human-Readable Reasons
+// ══════════════════════════════════════════════════════════════════
+async function loadShapReasons(txId) {
+  const id  = txId || document.getElementById('shapReasonsId').value;
+  const box = document.getElementById('shapReasonsBox');
+  if (!id) { box.innerHTML = `<div class="shap-empty" style="color:#f59e0b;">⚠️ Enter a transaction ID.</div>`; return; }
+  box.innerHTML = `<div class="shap-empty"><span class="spinner"></span> Generating fraud reason report for #${id}…</div>`;
+
+  try {
+    const res  = await fetch(`/api/shap/explain/${id}`);
+    const data = await res.json();
+    if (data.error) { box.innerHTML = `<div class="shap-empty" style="color:#ef4444;">⚠️ ${data.error}</div>`; return; }
+
+    const isFraud = data.prediction === 1;
+    let html = `
+      <div style="margin-bottom:16px;padding:12px 16px;border-radius:8px;
+           background:${isFraud?'rgba(239,68,68,0.08)':'rgba(34,197,94,0.08)'};
+           border:1px solid ${isFraud?'#ef4444':'#22c55e'};">
+        <div style="font-size:1.1rem;font-weight:700;color:${isFraud?'#ef4444':'#22c55e'};">
+          ${isFraud?'🚨 FRAUD ALERT':'✅ GENUINE'} — Transaction #${id}
+          <span class="model-ver-tag">${data.model_version||'v_original'}</span>
+        </div>
+        <div style="font-size:.85rem;color:#94a3b8;margin-top:4px;">
+          Fraud Score: <strong>${(data.confidence*100).toFixed(1)}%</strong>
+        </div>
+      </div>`;
+
+    if (isFraud && data.reasons && data.reasons.length) {
+      html += `<div style="font-size:.82rem;color:#94a3b8;margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em;">Risk Drivers (analyst notes)</div>`;
+      data.reasons.forEach(r => {
+        html += `
+          <div class="reason-item">
+            <div>⚠️</div>
+            <div>
+              <div class="reason-text">${r.text}</div>
+              <div class="reason-shap">SHAP contribution: +${r.shap.toFixed(4)}</div>
+            </div>
+          </div>`;
+      });
+    } else if (!isFraud) {
+      html += `<div class="reason-item neg"><div>✅</div><div class="reason-text">Transaction falls within normal behaviour patterns — no strong individual risk drivers identified.</div></div>`;
+      (data.waterfall || []).filter(r => r.value < -0.002).slice(0,3).forEach(r => {
+        html += `
+          <div class="reason-item neg">
+            <div>🛡️</div>
+            <div>
+              <div class="reason-text">${r.feature} reduces fraud risk</div>
+              <div class="reason-shap">SHAP: ${r.value.toFixed(4)}</div>
+            </div>
+          </div>`;
+      });
+    } else {
+      html += `<div class="shap-empty">No strong risk drivers identified (contextual anomaly).</div>`;
+    }
+
+    box.innerHTML = html;
+  } catch(e) {
+    box.innerHTML = `<div class="shap-empty" style="color:#ef4444;">Error: ${e.message}</div>`;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════
+// Tab 4 — SHAP Drift Comparison
+// ══════════════════════════════════════════════════════════════════
+async function loadShapDriftComparison() {
+  const box = document.getElementById('shapDriftCompareBox');
+  box.innerHTML = `<div class="shap-empty"><span class="spinner"></span> Loading SHAP version comparison…</div>`;
+  try {
+    const res  = await fetch('/api/shap/drift_comparison');
+    const data = await res.json();
+
+    if (!data.versions || data.versions.length === 0) {
+      box.innerHTML = `<div class="shap-empty">No retrain snapshots yet. Drift comparison becomes available after the first drift-triggered retrain.</div>`;
+      return;
+    }
+
+    const versions = data.versions;
+    const byVer    = data.by_version;
+
+    if (versions.length < 2) {
+      // Only one version — just show it as a table
+      const rows = byVer[versions[0]] || [];
+      let html   = `<div style="margin-bottom:10px;font-size:.85rem;color:#94a3b8;">Only one retrain snapshot available. A second retrain will enable delta comparison.</div>`;
+      html += buildSingleVersionTable(versions[0], rows);
+      box.innerHTML = html;
+      return;
+    }
+
+    // Two+ versions — show comparison table with delta
+    const vA   = versions[versions.length - 1];  // oldest
+    const vB   = versions[0];                     // newest
+    const rowsA = Object.fromEntries((byVer[vA]||[]).map(r => [r.feature, r.importance]));
+    const rowsB = Object.fromEntries((byVer[vB]||[]).map(r => [r.feature, r.importance]));
+    const allFeatures = [...new Set([...Object.keys(rowsA), ...Object.keys(rowsB)])];
+
+    let html = `
+      <div style="margin-bottom:10px;font-size:.85rem;color:#94a3b8;">
+        Comparing <span class="model-ver-tag">${vA}</span> (baseline) → <span class="model-ver-tag">${vB}</span> (latest retrain).
+        Red Δ = feature became MORE important after drift. Green = LESS important.
+      </div>
+      <div class="drift-compare-wrap">
+      <table class="drift-compare-table">
+        <thead>
+          <tr>
+            <th>Feature</th>
+            <th>${vA} (mean|SHAP|)</th>
+            <th>${vB} (mean|SHAP|)</th>
+            <th>Δ Change</th>
+            <th>Δ %</th>
+          </tr>
+        </thead>
+        <tbody>`;
+
+    allFeatures
+      .sort((a, b) => Math.abs((rowsB[b]||0) - (rowsA[b]||0)) - Math.abs((rowsB[a]||0) - (rowsA[a]||0)))
+      .forEach(feat => {
+        const a     = rowsA[feat] || 0;
+        const b     = rowsB[feat] || 0;
+        const delta = b - a;
+        const pct   = a > 0 ? ((delta / a) * 100).toFixed(1) : '—';
+        const cls   = delta > 0.001 ? 'delta-pos' : delta < -0.001 ? 'delta-neg' : 'delta-neu';
+        const sign  = delta > 0 ? '+' : '';
+        const isGraph = GRAPH_FEATURES.has(feat);
+        html += `
+          <tr>
+            <td>${feat}${isGraph ? ' <span style="font-size:.7rem;color:#ef4444;">(graph)</span>' : ''}</td>
+            <td>${a.toFixed(4)}</td>
+            <td>${b.toFixed(4)}</td>
+            <td class="${cls}">${sign}${delta.toFixed(4)}</td>
+            <td class="${cls}">${pct !== '—' ? sign+pct+'%' : '—'}</td>
+          </tr>`;
+      });
+
+    html += `</tbody></table></div>`;
+    box.innerHTML = html;
+  } catch(e) {
+    box.innerHTML = `<div class="shap-empty" style="color:#ef4444;">Error: ${e.message}</div>`;
+  }
+}
+
+function buildSingleVersionTable(version, rows) {
+  let html = `<table class="drift-compare-table" style="min-width:300px;">
+    <thead><tr><th>Feature</th><th>${version} (mean|SHAP|)</th></tr></thead><tbody>`;
+  rows.forEach(r => {
+    html += `<tr><td>${r.feature}</td><td>${r.importance.toFixed(4)}</td></tr>`;
+  });
+  html += `</tbody></table>`;
+  return html;
+}
+
+// ══════════════════════════════════════════════════════════════════
+// Explain latest helper (shared by waterfall + reasons tabs)
+// ══════════════════════════════════════════════════════════════════
+async function explainLatest(tab) {
+  const res  = await fetch('/api/transactions?limit=1');
+  const rows = await res.json();
+  if (!rows.length) { showToast('No transactions yet — generate one first.','#f59e0b'); return; }
+  const id = rows[0].id;
+  if (tab === 'waterfall') { document.getElementById('shapTxId').value = id;     loadShapWaterfall(id); }
+  else                     { document.getElementById('shapReasonsId').value = id; loadShapReasons(id); }
+}
+
+// ══════════════════════════════════════════════════════════════════
+// Init
+// ══════════════════════════════════════════════════════════════════
+loadStats();
+loadTransactions();
+loadAccuracy();
+</script>
+</body>
+</html>

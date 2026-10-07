@@ -1,0 +1,45 @@
+{
+  "all_features": [
+    "amount",
+    "age_encoded",
+    "gender_encoded",
+    "category_encoded",
+    "same_zip",
+    "step",
+    "cust_txn_count",
+    "cust_avg_amount",
+    "cust_std_amount",
+    "amount_to_mean_ratio",
+    "merchant_fraud_rate",
+    "merchant_txn_volume",
+    "cust_unique_merchants",
+    "network_suspicion_score",
+    "category_fraud_rate",
+    "cust_category_diversity"
+  ],
+  "base_features": [
+    "amount",
+    "age_encoded",
+    "gender_encoded",
+    "category_encoded",
+    "same_zip",
+    "step"
+  ],
+  "graph_features": [
+    "cust_txn_count",
+    "cust_avg_amount",
+    "cust_std_amount",
+    "amount_to_mean_ratio",
+    "merchant_fraud_rate",
+    "merchant_txn_volume",
+    "cust_unique_merchants",
+    "network_suspicion_score",
+    "category_fraud_rate",
+    "cust_category_diversity"
+  ],
+  "target_column": "fraud",
+  "temporal_column": "step",
+  "train_split_idx": 475714,
+  "model_version": "1.0.0",
+  "created_at": "2026-05-17T17:59:00.745855"
+}
